@@ -1,6 +1,6 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-
-
+import { ChatGoogle } from "@langchain/google";
+import { ChatOpenRouter } from "@langchain/openrouter";
+import { createAgent } from "langchain";
 import { z } from "zod";
 
 const extractionSchema = z.object({
@@ -50,22 +50,20 @@ const extractionSchema = z.object({
         .describe("The customer's preferred service time"),
 });
 
-const extractor = new ChatGoogleGenerativeAI({
-  model: "gemini-3.6-flash",
-  temperature: 0.7,
-  maxRetries: 1, // Keep low so it fails quickly to fallback on rate limits
+const primaryExtractor = new ChatOpenRouter({
+    model: "mistralai/mistral-nemo",
+    temperature: 0.7,
+    maxRetries: 1, // Keep low so it fails quickly to fallback on rate limits
 });
 
+const extratorAgent = createAgent({
+    model: primaryExtractor,
+    responseFormat: extractionSchema
+})
 
-const structuredExtractor = extractor.withStructuredOutput(
-        extractionSchema
-    );
-
-export async function extractLeadInformation(
-    conversation: string
-) {
-    const result =
-        await structuredExtractor.invoke([
+export async function extractLeadInformation(conversation: string) {
+    const result = await extratorAgent.invoke({
+        messages:[
             {
                 role: "system",
                 content:
@@ -97,12 +95,60 @@ export async function extractLeadInformation(
                     COMMERCIAL = business, office, restaurant, store, etc.
 
                     Return only information that is actually present.`,
-            },
-            {
-                role: "user",
-                content: conversation,
-            },
-        ]);
-
-    return result;
+                },
+                {
+                    role: "user",
+                    content: conversation,
+                },
+        ]
+    })
+    console.log( "🔎 EXTRACTOR RESULT:", JSON.stringify(result, null, 2) );
+    return result.structuredResponse;
 }
+
+// export async function extractLeadInformation(
+//     conversation: string
+// ) {
+//     const result =
+//         await extratorAgent.invoke([
+//             {
+//                 messages: [{
+//                     role: "system",
+//                     content:
+
+//                         `You extract lead information from an HVAC customer conversation.
+
+//                     Extract information only when it is supported
+//                     by the conversation.
+
+//                     Do not guess or invent information.
+
+//                     If information is not available, return null.
+
+//                     For service, use simple HVAC categories such as:
+//                     - AC Repair
+//                     - Heating Repair
+//                     - AC Installation
+//                     - Heating Installation
+//                     - Maintenance
+//                     - Other
+
+//                     For urgency:
+//                     LOW = routine/non-urgent
+//                     MEDIUM = customer needs service soon
+//                     HIGH = emergency or major loss of heating/cooling
+
+//                     For property type:
+//                     RESIDENTIAL = home, house, apartment
+//                     COMMERCIAL = business, office, restaurant, store, etc.
+
+//                     Return only information that is actually present.`,
+//                 },
+//                 {
+//                     role: "user",
+//                     content: conversation,
+//                 },
+//                 }]);
+
+//     return result;
+// }

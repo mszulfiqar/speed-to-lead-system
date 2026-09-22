@@ -24,3 +24,4 @@ export type Message = {
   sender: "customer" | "ai";
   time: string;
 };
+
