@@ -102,53 +102,6 @@ export async function extractLeadInformation(conversation: string) {
                 },
         ]
     })
-    console.log( "🔎 EXTRACTOR RESULT:", JSON.stringify(result, null, 2) );
+    // console.log( "🔎 EXTRACTOR RESULT:", JSON.stringify(result, null, 2) );
     return result.structuredResponse;
 }
-
-// export async function extractLeadInformation(
-//     conversation: string
-// ) {
-//     const result =
-//         await extratorAgent.invoke([
-//             {
-//                 messages: [{
-//                     role: "system",
-//                     content:
-
-//                         `You extract lead information from an HVAC customer conversation.
-
-//                     Extract information only when it is supported
-//                     by the conversation.
-
-//                     Do not guess or invent information.
-
-//                     If information is not available, return null.
-
-//                     For service, use simple HVAC categories such as:
-//                     - AC Repair
-//                     - Heating Repair
-//                     - AC Installation
-//                     - Heating Installation
-//                     - Maintenance
-//                     - Other
-
-//                     For urgency:
-//                     LOW = routine/non-urgent
-//                     MEDIUM = customer needs service soon
-//                     HIGH = emergency or major loss of heating/cooling
-
-//                     For property type:
-//                     RESIDENTIAL = home, house, apartment
-//                     COMMERCIAL = business, office, restaurant, store, etc.
-
-//                     Return only information that is actually present.`,
-//                 },
-//                 {
-//                     role: "user",
-//                     content: conversation,
-//                 },
-//                 }]);
-
-//     return result;
-// }
