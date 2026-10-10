@@ -94,7 +94,9 @@ Policy rules:
   /*
    * Conversation history
    */
-  const conversationHistory = state.messages
+  const previousMessages = state.messages.slice(0, -1);
+
+  const conversationHistory = previousMessages
     .map((message) => {
       const role =
         message._getType() === "human"
