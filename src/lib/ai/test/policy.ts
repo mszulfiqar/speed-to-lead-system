@@ -23,8 +23,8 @@ export function applyPolicy(
   const decision = state.jevDecision;
 
   /*
-   * Spam takes priority over normal conversation handling.
-   * The graph will use this decision to suppress AI replies.
+   * 1. Spam takes priority.
+   * The graph should suppress the AI response.
    */
   if (decision?.isSpam === true) {
     return {
@@ -33,12 +33,13 @@ export function applyPolicy(
   }
 
   /*
-   * Meaningful input resets the unclear-message counter.
+   * 2. A customer who is not ready to book
+   * can still be a valuable lead.
+   *
+   * Keep the conversation active and continue
+   * helping them. Do not classify them as low intent.
    */
-  const meaningful =
-    decision?.isMeaningfulResponse === true;
-
-  if (meaningful) {
+  if (decision?.bookingReadiness === "NOT_READY") {
     return {
       unclearCount: 0,
       lowIntent: false,
@@ -49,7 +50,30 @@ export function applyPolicy(
   }
 
   /*
-   * Remain in silent mode until meaningful input arrives.
+   * 3. Meaningful messages reset the unclear counter.
+   *
+   * If the customer is ready to book, set the goal
+   * to APPOINTMENT. Otherwise, continue qualifying.
+   */
+  if (decision?.isMeaningfulResponse === true) {
+    const readyToBook =
+      decision.bookingReadiness === "READY";
+
+    return {
+      unclearCount: 0,
+      lowIntent: false,
+      currentGoal: readyToBook
+        ? "APPOINTMENT"
+        : "QUALIFY",
+      conversationStatus: "AI_ACTIVE",
+      action: "CONTINUE",
+    };
+  }
+
+  /*
+   * 4. Stay silent while low intent is active.
+   * A meaningful message or explicit NOT_READY
+   * classification above can reactivate the session.
    */
   if (state.lowIntent) {
     return {
@@ -61,6 +85,9 @@ export function applyPolicy(
     };
   }
 
+  /*
+   * 5. Count unproductive messages.
+   */
   const nextCount = state.unclearCount + 1;
   const nextAction = getUnclearAction(nextCount);
 
