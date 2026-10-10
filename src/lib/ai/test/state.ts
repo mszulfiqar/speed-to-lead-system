@@ -1,3 +1,4 @@
+
 import { Annotation } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 
@@ -12,6 +13,11 @@ export type TestAppointmentStatus =
   | "PENDING"
   | "CONFIRMED"
   | "CANCELLED";
+
+export type TestBookingReadiness =
+  | "READY"
+  | "NOT_READY"
+  | "UNKNOWN";
 
 export type TestConversationGoal =
   | "GENERAL"
@@ -32,7 +38,6 @@ type TestLead = {
   preferredTime: string | null;
 };
 
-
 type TestJevDecision = {
   // Is the customer's message meaningful in context?
   isMeaningfulResponse: boolean;
@@ -51,8 +56,10 @@ type TestJevDecision = {
 
   // Is the message spam or abusive content?
   isSpam: boolean;
-};
 
+  // Is the customer ready to schedule an appointment?
+  bookingReadiness: TestBookingReadiness;
+};
 
 export const AITestState = Annotation.Root({
   /*
@@ -88,11 +95,7 @@ export const AITestState = Annotation.Root({
   }),
 
   /*
-   * Jev decision.
-   *
-   * We are not using Jev yet in the Test Lab,
-   * but we keep the state field because production
-   * will eventually use it.
+   * Jev decision
    */
   jevDecision: Annotation<TestJevDecision | null>({
     value: (_current, update) => update,
@@ -113,6 +116,15 @@ export const AITestState = Annotation.Root({
   }),
 
   /*
+   * Customer booking readiness.
+   * Separate from spam and low-intent handling.
+   */
+  bookingReadiness: Annotation<TestBookingReadiness>({
+    value: (_current, update) => update,
+    default: () => "UNKNOWN",
+  }),
+
+  /*
    * Conversation state
    */
   conversationStatus: Annotation<TestConversationStatus>({
@@ -129,8 +141,8 @@ export const AITestState = Annotation.Root({
   }),
 
   /*
-   * How many consecutive customer messages
-   * failed to provide meaningful information?
+   * Consecutive customer messages that failed
+   * to provide meaningful information.
    */
   unclearCount: Annotation<number>({
     value: (_current, update) => update,
@@ -139,6 +151,7 @@ export const AITestState = Annotation.Root({
 
   /*
    * Customer has stopped making useful progress.
+   * This does not mean the customer is unready to book.
    */
   lowIntent: Annotation<boolean>({
     value: (_current, update) => update,
@@ -147,10 +160,6 @@ export const AITestState = Annotation.Root({
 
   /*
    * The last question asked by the AI.
-   *
-   * This becomes very useful later when we bring
-   * Jev back because "yes" only makes sense relative
-   * to the previous question.
    */
   lastQuestion: Annotation<string | null>({
     value: (_current, update) => update,
