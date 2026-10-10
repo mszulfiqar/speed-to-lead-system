@@ -188,20 +188,33 @@ Do not infer missing details.
 
           shouldHandoff: {
             type: "noul",
-            instructions: `
-Does this message or conversation require human involvement now?
-`,
-            criteria: {
-              true: `
-The customer explicitly asks for a human, a human must verify
-appointment details before booking, or the situation requires
-human judgment or intervention.
-`,
-              false: `
-The AI can safely continue the conversation without human
-involvement at this stage.
-`,
+            instructions: {
+              question: "Does the latest customer message or conversation context require human involvement now?",
+              inspect: "latestMessage, conversation, lead",
+              focus: "Look for an explicit request for a human, a required human verification step, or a situation requiring human judgment. Do not confuse low intent or repeated messages with a need for human involvement."
             },
+            criteria: {
+              true: {
+                what: "The customer explicitly requests a human representative, an appointment requires human verification before booking, or the situation requires human intervention.",
+                examples: [
+                  "Can I speak to a real person?",
+                  "Please connect me with your team.",
+                  "The customer has requested an appointment that must be verified by a human before booking.",
+                  "The customer reports a serious safety emergency requiring human intervention."
+                ]
+              },
+              false: {
+                what: "The message does not require human involvement, even if it is repetitive, unclear, short, or low intent.",
+                examples: [
+                  "hi",
+                  "hi (after the assistant has already greeted the customer)",
+                  "ok",
+                  "hmm",
+                  "My AC is not cooling.",
+                  "How much does AC repair cost?"
+                ]
+              }
+            }
           },
 
           isAppointmentRequest: {
