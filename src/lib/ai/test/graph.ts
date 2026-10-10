@@ -1,57 +1,3 @@
-// import {
-//   END,
-//   START,
-//   StateGraph,
-// } from "@langchain/langgraph";
-
-// import {
-//   AITestState,
-//   type AITestStateType,
-// } from "./state";
-
-// import { applyPolicy } from "./policy";
-// import { testAiAgent } from "./ai-agent";
-
-// /*
-//  * Load persistent conversation state.
-//  */
-// async function testLoadState(
-//   state: AITestStateType,
-// ): Promise<Partial<AITestStateType>> {
-//   return {
-//     conversationStatus:
-//       state.conversationStatus ?? "AI_ACTIVE",
-
-//     appointmentStatus:
-//       state.appointmentStatus ?? "NONE",
-
-//     appointmentRequested:
-//       state.appointmentRequested ?? false,
-//   };
-// }
-
-// /*
-//  * Apply deterministic conversation rules.
-//  */
-// async function testPolicy(
-//   state: AITestStateType,
-// ): Promise<Partial<AITestStateType>> {
-//   return applyPolicy(state);
-// }
-
-// const workflow = new StateGraph(AITestState)
-//   .addNode("loadState", testLoadState)
-//   .addNode("policy", testPolicy)
-//   .addNode("aiAgent", testAiAgent)
-
-//   .addEdge(START, "loadState")
-//   .addEdge("loadState", "policy")
-//   .addEdge("policy", "aiAgent")
-//   .addEdge("aiAgent", END);
-
-// export const aiTestGraph = workflow.compile();
-
-
 
 import {
   END,
@@ -87,8 +33,7 @@ async function testLoadState(
 }
 
 /*
- * Run Jev to classify the latest customer message
- * using the available conversation context.
+ * Classify the latest customer message with Jev.
  */
 async function testJevNode(
   state: AITestStateType,
@@ -97,7 +42,7 @@ async function testJevNode(
 }
 
 /*
- * Apply deterministic conversation rules using Jev's decision.
+ * Apply deterministic conversation policy.
  */
 async function testPolicy(
   state: AITestStateType,
@@ -106,12 +51,34 @@ async function testPolicy(
 }
 
 /*
- * If low intent is active, skip DeepSeek.
- * Otherwise, generate the next AI response.
+ * Decide whether DeepSeek should run.
+ *
+ * Safety emergencies and legitimate appointment requests
+ * take priority over spam suppression.
+ *
+ * Spam and low-intent conversations must not reach DeepSeek.
  */
 function routeAfterPolicy(
   state: AITestStateType,
 ): "aiAgent" | typeof END {
+  const decision = state.jevDecision;
+
+  // Do not suppress potential safety emergencies.
+  if (decision?.isEmergency === true) {
+    return "aiAgent";
+  }
+
+  // Allow legitimate scheduling requests to proceed.
+  if (decision?.isAppointmentRequest === true) {
+    return "aiAgent";
+  }
+
+  // Suppress messages classified as spam.
+  if (decision?.isSpam === true) {
+    return END;
+  }
+
+  // Stay silent after the low-intent limit is reached.
   if (state.lowIntent) {
     return END;
   }
