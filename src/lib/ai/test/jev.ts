@@ -1,5 +1,5 @@
 
-import type { AITestStateType } from "./state";
+import type { AITestStateType, TestBookingReadiness } from "./state";
 
 type TestJevInput = {
   latestMessage: string;
@@ -24,6 +24,7 @@ type TestJevDecision = {
   isAppointmentRequest: boolean;
   isEmergency: boolean;
   isSpam: boolean;
+  bookingReadiness: TestBookingReadiness;
 };
 
 export async function testJev(
@@ -37,21 +38,17 @@ export async function testJev(
 
   const lead = state.lead;
 
-  const conversation = state.messages
-    .slice(0, -1)
-    .map((message) => {
-      const role =
-        message._getType() === "human"
-          ? "Customer"
-          : "Assistant";
+  const conversation = state.messages.slice(0, -1).map((message) => {
+    const role =
+      message._getType() === "human" ? "Customer" : "Assistant";
 
-      const content =
-        typeof message.content === "string"
-          ? message.content
-          : JSON.stringify(message.content);
+    const content =
+      typeof message.content === "string"
+        ? message.content
+        : JSON.stringify(message.content);
 
-      return `${role}: ${content}`;
-    });
+    return `${role}: ${content}`;
+  });
 
   const input: TestJevInput = {
     latestMessage: state.newMessage,
@@ -83,171 +80,270 @@ export async function testJev(
         questions: {
           isSpam: {
             type: "noul",
-            instructions: `
-Determine whether the customer's latest message is spam
-or abusive content, using the conversation for context.
-
-Classify the message itself, not merely whether it is repetitive,
-unclear, short, or unrelated to HVAC.
-`,
+            instructions: {
+              question:
+                "Is the latest customer message spam or abusive content?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Look for unsolicited promotional content, scams, malicious links, or abuse. Do not confuse repetition, emojis, short messages, or low intent with spam.",
+            },
             criteria: {
-              true: `
-The message is clearly unsolicited promotional content,
-bulk advertising, repeated solicitation, malicious links,
-scams, or abusive content that is unrelated to legitimate
-customer support.
-
-Examples:
-- Repeated unsolicited advertisements for unrelated products.
-- Unsolicited promotions containing suspicious links.
-- Repeated commercial solicitation unrelated to HVAC service.
-
-Require evidence of spam or abuse. Do not assume spam
-from a short or unusual message.
-`,
-              false: `
-The message is a legitimate customer communication,
-including greetings, questions, HVAC requests, unclear messages,
-repeated greetings, short acknowledgements, frustration,
-or an emergency report.
-
-A repeated "hi" may indicate low conversational intent,
-but is not spam by itself.
-
-Do not classify a message as spam just because it is irrelevant,
-misspelled, repetitive, or difficult to understand.
-`,
+              true: {
+                what:
+                  "The message is clearly unsolicited promotional spam, a scam, malicious solicitation, or abusive content.",
+                examples: [
+                  "Buy our marketing services! Visit our website for a discount.",
+                  "Repeated unsolicited advertisements unrelated to HVAC service.",
+                  "Unsolicited scam messages containing suspicious links.",
+                ],
+              },
+              false: {
+                what:
+                  "The message is a legitimate customer communication or there is insufficient evidence of spam.",
+                examples: [
+                  "Hi",
+                  "My AC isn't cooling.",
+                  "How much does AC repair cost?",
+                  "Hi 😊",
+                  "A repeated question about an HVAC service.",
+                ],
+              },
             },
           },
 
           isMeaningfulResponse: {
             type: "noul",
-            instructions: `
-Determine whether the latest customer message meaningfully
-advances the conversation, considering the conversation history.
-
-Meaningful means the message starts a conversation, answers
-a question, asks a relevant question, expresses a service need,
-provides useful information, or otherwise gives the assistant
-something relevant to respond to.
-
-A greeting can start a conversation. However, a greeting repeated
-after the assistant has already acknowledged the greeting,
-without adding anything new, does not meaningfully advance it.
-
-Use the previous messages to distinguish a first greeting
-from a repeated greeting.
-`,
+            instructions: {
+              question:
+                "Does the latest customer message meaningfully advance the conversation?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Judge the message in context. Greetings can start a conversation, short answers can answer a question, and customers who are not ready to book can still contribute meaningfully.",
+            },
             criteria: {
-              true: `
-Examples:
-- The first "hi" in a new conversation.
-- "My AC isn't cooling."
-- "I need heating repair."
-- "How much does a diagnostic visit cost?"
-- "Yes" when answering a relevant yes/no question.
-- "Tomorrow at 5" when answering a scheduling question.
-- A greeting followed by a genuine service question.
-
-Judge short replies in context. A short answer can be meaningful
-when it answers the assistant's previous question.
-`,
-              false: `
-Examples:
-- "Hi" repeated after the assistant has already greeted
-  the customer and the customer adds no new information.
-- "Okay" when it does not answer the previous question.
-- "Hmm" without any useful context.
-- An acknowledgement that does not answer a question
-  or move the conversation forward.
-
-Do not mark a legitimate HVAC request as meaningless
-just because it is short or contains spelling mistakes.
-`,
+              true: {
+                what:
+                  "The message starts a conversation, answers a relevant question, asks a genuine question, describes a service need, provides useful details, or otherwise advances the conversation.",
+                examples: [
+                  "The first hi in a new conversation.",
+                  "My AC isn't cooling.",
+                  "Yes, tomorrow works for me.",
+                  "How much does a diagnostic visit cost?",
+                  "I'm comparing prices before I decide.",
+                  "I'm not ready to book yet.",
+                ],
+              },
+              false: {
+                what:
+                  "The message adds no useful information and does not answer a relevant question or move the conversation forward.",
+                examples: [
+                  "Hi repeated after the assistant has already greeted the customer.",
+                  "Okay, when it does not answer the previous question.",
+                  "Hmm, without useful context.",
+                  "Repeated greetings with no new information.",
+                ],
+              },
             },
           },
 
           shouldExtract: {
             type: "noul",
-            instructions: `
-Does the latest message explicitly provide new or changed
-information that belongs in the structured HVAC lead?
-`,
+            instructions: {
+              question:
+                "Does the latest customer message explicitly provide new or changed information for the structured HVAC lead?",
+              inspect: "latestMessage, conversation, lead",
+              focus:
+                "Extract only information actually provided by the customer. Consider what is already stored in the lead.",
+            },
             criteria: {
-              true: `
-The message explicitly provides or corrects a service,
-problem, urgency, property type, address, city, state,
-ZIP code, or preferred appointment time.
-`,
-              false: `
-No new or changed lead information is explicitly provided.
-Do not infer missing details.
-`,
+              true: {
+                what:
+                  "The customer explicitly provides or corrects the service, problem, urgency, property type, address, city, state, ZIP code, or preferred appointment time.",
+                examples: [
+                  "My AC is making a loud buzzing noise.",
+                  "It's a commercial property.",
+                  "I'm in Dallas, Texas.",
+                  "Tomorrow after 3 PM works.",
+                ],
+              },
+              false: {
+                what:
+                  "The customer provides no new or changed lead information.",
+                examples: [
+                  "Hi",
+                  "Okay",
+                  "I'm comparing prices.",
+                  "Can you explain your diagnostic fee?",
+                ],
+              },
             },
           },
 
           shouldHandoff: {
             type: "noul",
             instructions: {
-              question: "Does the latest customer message or conversation context require human involvement now?",
+              question:
+                "Does the latest customer message or conversation context require human involvement now?",
               inspect: "latestMessage, conversation, lead",
-              focus: "Look for an explicit request for a human, a required human verification step, or a situation requiring human judgment. Do not confuse low intent or repeated messages with a need for human involvement."
+              focus:
+                "Look for an explicit request for a human, a required human verification step, or a situation requiring human judgment. Do not confuse low intent, repeated greetings, or not being ready to book with a need for human involvement.",
             },
             criteria: {
               true: {
-                what: "The customer explicitly requests a human representative, an appointment requires human verification before booking, or the situation requires human intervention.",
+                what:
+                  "The customer explicitly requests a human, an appointment requires human verification before booking, or the situation requires human intervention.",
                 examples: [
                   "Can I speak to a real person?",
                   "Please connect me with your team.",
-                  "The customer has requested an appointment that must be verified by a human before booking.",
-                  "The customer reports a serious safety emergency requiring human intervention."
-                ]
+                  "The customer has requested an appointment that requires human verification before booking.",
+                  "A serious safety situation requires human intervention.",
+                ],
               },
               false: {
-                what: "The message does not require human involvement, even if it is repetitive, unclear, short, or low intent.",
+                what:
+                  "Human involvement is not specifically required at this point.",
                 examples: [
-                  "hi",
-                  "hi (after the assistant has already greeted the customer)",
-                  "ok",
-                  "hmm",
+                  "Hi",
+                  "Hi repeated after the assistant has greeted the customer.",
                   "My AC is not cooling.",
-                  "How much does AC repair cost?"
-                ]
-              }
-            }
+                  "I'm not ready to book yet.",
+                  "How much does AC repair cost?",
+                ],
+              },
+            },
           },
 
           isAppointmentRequest: {
             type: "noul",
-            instructions: `
-Is the customer requesting, discussing, or providing information
-for an appointment or service scheduling?
-`,
+            instructions: {
+              question:
+                "Is the customer requesting or discussing scheduling an HVAC service appointment?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Distinguish actual scheduling intent from general interest, price questions, and statements that the customer is not ready to book.",
+            },
             criteria: {
-              true: `
-The customer requests a booking, asks to schedule service,
-or gives a date or time in a scheduling context.
-`,
-              false: `
-The customer is not requesting or discussing scheduling.
-`,
+              true: {
+                what:
+                  "The customer asks to schedule service, requests an appointment, or provides a date or time in a scheduling context.",
+                examples: [
+                  "Can you send a technician tomorrow?",
+                  "I'd like to book an appointment.",
+                  "Can someone come Friday afternoon?",
+                ],
+              },
+              false: {
+                what:
+                  "The customer is not requesting or discussing a specific appointment.",
+                examples: [
+                  "How much does AC repair cost?",
+                  "I'm comparing prices.",
+                  "I'm not ready to book yet.",
+                  "My AC isn't cooling.",
+                ],
+              },
             },
           },
 
           isEmergency: {
             type: "noul",
-            instructions: `
-Does the customer describe an immediate or potentially serious
-safety emergency involving HVAC equipment or the surrounding area?
-`,
+            instructions: {
+              question:
+                "Does the customer describe an immediate or potentially serious safety emergency involving HVAC equipment or the surrounding area?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Look for concrete safety hazards, not ordinary equipment problems or routine repair requests.",
+            },
             criteria: {
-              true: `
-Examples include fire, smoke, suspected carbon monoxide,
-gas smell, or immediate electrical danger.
-`,
-              false: `
-No immediate or potentially serious safety emergency is indicated.
-`,
+              true: {
+                what:
+                  "The customer describes a possible immediate safety hazard.",
+                examples: [
+                  "I smell gas near the furnace.",
+                  "There is smoke coming from the HVAC unit.",
+                  "I suspect carbon monoxide is leaking.",
+                  "There are sparks coming from the equipment.",
+                ],
+              },
+              false: {
+                what:
+                  "No immediate or potentially serious safety emergency is indicated.",
+                examples: [
+                  "My AC isn't cooling.",
+                  "The unit is making a loud noise.",
+                  "I need routine maintenance.",
+                ],
+              },
+            },
+          },
+
+          isBookingReady: {
+            type: "noul",
+            instructions: {
+              question:
+                "Has the customer clearly indicated that they are ready to schedule an appointment now?",
+              inspect: "latestMessage, conversation, lead",
+              focus:
+                "Look for explicit present booking intent. A service request, price question, or willingness to receive information alone does not establish booking readiness.",
+            },
+            criteria: {
+              true: {
+                what:
+                  "The customer explicitly agrees to schedule, asks to book now, or confirms that they want to proceed with an appointment.",
+                examples: [
+                  "I'd like to book an appointment.",
+                  "Please schedule a technician for tomorrow.",
+                  "Yes, let's get it scheduled.",
+                  "I'm ready to book the service.",
+                ],
+              },
+              false: {
+                what:
+                  "The customer has not clearly indicated readiness to schedule right now.",
+                examples: [
+                  "I'm just comparing prices.",
+                  "I'm not ready to book yet.",
+                  "Maybe next month.",
+                  "How much does a diagnostic visit cost?",
+                  "My AC isn't cooling.",
+                  "The customer has not discussed booking.",
+                ],
+              },
+            },
+          },
+
+          isExplicitlyNotReadyToBook: {
+            type: "noul",
+            instructions: {
+              question:
+                "Has the customer explicitly indicated that they are not ready or do not want to schedule an appointment yet?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Look for an expressed delay or hesitation about booking. Do not infer reluctance simply because the customer has not mentioned scheduling.",
+            },
+            criteria: {
+              true: {
+                what:
+                  "The customer explicitly says they want to wait, are only researching, need to think about it, or are not ready to schedule yet.",
+                examples: [
+                  "I'm just comparing prices for now.",
+                  "I'm not ready to book yet.",
+                  "I need to think about it.",
+                  "Maybe next month.",
+                  "I need to discuss it with my family first.",
+                ],
+              },
+              false: {
+                what:
+                  "The customer has not explicitly said they are not ready to book.",
+                examples: [
+                  "I'd like to book for tomorrow.",
+                  "How much does a diagnostic visit cost?",
+                  "My AC isn't cooling.",
+                  "Hi",
+                  "The customer has not discussed booking readiness.",
+                ],
+              },
             },
           },
         },
@@ -278,6 +374,8 @@ No immediate or potentially serious safety emergency is indicated.
     "shouldHandoff",
     "isAppointmentRequest",
     "isEmergency",
+    "isBookingReady",
+    "isExplicitlyNotReadyToBook",
   ] as const;
 
   for (const question of requiredQuestions) {
@@ -291,6 +389,18 @@ No immediate or potentially serious safety emergency is indicated.
     }
   }
 
+  const isBookingReady = answers.isBookingReady.noul > 0.5;
+  const isExplicitlyNotReady =
+    answers.isExplicitlyNotReadyToBook.noul > 0.5;
+
+  // If the two signals conflict, avoid making an unsupported assumption.
+  const bookingReadiness: TestBookingReadiness =
+    isBookingReady && !isExplicitlyNotReady
+      ? "READY"
+      : isExplicitlyNotReady && !isBookingReady
+        ? "NOT_READY"
+        : "UNKNOWN";
+
   const jevDecision: TestJevDecision = {
     isSpam: answers.isSpam.noul > 0.5,
     isMeaningfulResponse:
@@ -300,7 +410,11 @@ No immediate or potentially serious safety emergency is indicated.
     isAppointmentRequest:
       answers.isAppointmentRequest.noul > 0.5,
     isEmergency: answers.isEmergency.noul > 0.5,
+    bookingReadiness,
   };
 
-  return { jevDecision };
+  return {
+    jevDecision,
+    bookingReadiness,
+  };
 }
