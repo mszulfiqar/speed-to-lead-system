@@ -1,7 +1,7 @@
+
 import { HumanMessage } from "@langchain/core/messages";
 
 import {
-  AITestState,
   type AITestStateType,
 } from "./state";
 
@@ -42,15 +42,16 @@ function createInitialState(
 
     jevDecision: null,
 
+    // Booking readiness starts unknown.
+    bookingReadiness: "UNKNOWN",
+
     appointmentRequested: false,
 
     conversationStatus: "AI_ACTIVE",
 
     appointmentStatus: "NONE",
 
-    /*
-     * New conversation-control state.
-     */
+    // Conversation-control state.
     currentGoal: "GENERAL",
 
     unclearCount: 0,
@@ -99,20 +100,10 @@ export async function runAITest(
 ): Promise<AITestStateType> {
   const previousState = getTestSession(sessionId);
 
-  /*
-   * Add the new customer message to the conversation.
-   */
   const humanMessage = new HumanMessage({
     content: userMessage,
   });
 
-  /*
-   * Invoke LangGraph with only the fields that are
-   * actually being updated.
-   *
-   * We do NOT spread previousState because LangGraph's
-   * update types are different from the full state type.
-   */
   const result = await aiTestGraph.invoke({
     conversationId: sessionId,
 
@@ -127,6 +118,10 @@ export async function runAITest(
 
     jevDecision: null,
 
+    // Preserve booking readiness between messages.
+    bookingReadiness:
+      previousState.bookingReadiness,
+
     appointmentRequested:
       previousState.appointmentRequested,
 
@@ -136,9 +131,6 @@ export async function runAITest(
     appointmentStatus:
       previousState.appointmentStatus,
 
-    /*
-     * Persist our conversation-control fields.
-     */
     currentGoal:
       previousState.currentGoal,
 
