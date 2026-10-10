@@ -44,11 +44,28 @@ async function testJevNode(
 /*
  * Apply deterministic conversation policy.
  */
+// async function testPolicy(
+//   state: AITestStateType,
+// ): Promise<Partial<AITestStateType>> {
+//   return applyPolicy(state);
+// }
+
+
 async function testPolicy(
   state: AITestStateType,
 ): Promise<Partial<AITestStateType>> {
-  return applyPolicy(state);
+  const result = applyPolicy(state);
+
+  console.log("\n========== TEST LAB POLICY ==========");
+  console.log("Latest message:", state.newMessage);
+  console.log("Jev decision:", state.jevDecision);
+  console.log("Unclear count before:", state.unclearCount);
+  console.log("Policy result:", result);
+  console.log("=====================================\n");
+
+  return result;
 }
+
 
 /*
  * Decide whether DeepSeek should run.
@@ -58,33 +75,68 @@ async function testPolicy(
  *
  * Spam and low-intent conversations must not reach DeepSeek.
  */
+// function routeAfterPolicy(
+//   state: AITestStateType,
+// ): "aiAgent" | typeof END {
+//   const decision = state.jevDecision;
+
+//   // Do not suppress potential safety emergencies.
+//   if (decision?.isEmergency === true) {
+//     return "aiAgent";
+//   }
+
+//   // Allow legitimate scheduling requests to proceed.
+//   if (decision?.isAppointmentRequest === true) {
+//     return "aiAgent";
+//   }
+
+//   // Suppress messages classified as spam.
+//   if (decision?.isSpam === true) {
+//     return END;
+//   }
+
+//   // Stay silent after the low-intent limit is reached.
+//   if (state.lowIntent) {
+//     return END;
+//   }
+
+//   return "aiAgent";
+// }
+
+
 function routeAfterPolicy(
   state: AITestStateType,
 ): "aiAgent" | typeof END {
   const decision = state.jevDecision;
 
-  // Do not suppress potential safety emergencies.
+  let route: "aiAgent" | typeof END = "aiAgent";
+  let reason = "Normal AI response";
+
   if (decision?.isEmergency === true) {
-    return "aiAgent";
+    reason = "Emergency: allow AI safety response";
+  } else if (decision?.isAppointmentRequest === true) {
+    reason = "Appointment request: allow AI";
+  } else if (decision?.isSpam === true) {
+    route = END;
+    reason = "Spam detected: stop before AI";
+  } else if (state.lowIntent) {
+    route = END;
+    reason = "Low intent: stop before AI";
   }
 
-  // Allow legitimate scheduling requests to proceed.
-  if (decision?.isAppointmentRequest === true) {
-    return "aiAgent";
-  }
+  console.log("\n========== TEST LAB ROUTING ==========");
+  console.log("Latest message:", state.newMessage);
+  console.log("Spam:", decision?.isSpam);
+  console.log("Meaningful:", decision?.isMeaningfulResponse);
+  console.log("Unclear count:", state.unclearCount);
+  console.log("Low intent:", state.lowIntent);
+  console.log("Selected route:", route === END ? "END" : route);
+  console.log("Reason:", reason);
+  console.log("======================================\n");
 
-  // Suppress messages classified as spam.
-  if (decision?.isSpam === true) {
-    return END;
-  }
-
-  // Stay silent after the low-intent limit is reached.
-  if (state.lowIntent) {
-    return END;
-  }
-
-  return "aiAgent";
+  return route;
 }
+
 
 const workflow = new StateGraph(AITestState)
   .addNode("loadState", testLoadState)
