@@ -1,36 +1,43 @@
+// 
+
+
 import { runJev } from "../graph/jev";
 import type { AITestStateType } from "./state";
 
-export async function testJevNode(
-  state: AITestStateType
+export async function testJev(
+  state: AITestStateType,
 ): Promise<Partial<AITestStateType>> {
-  const conversation = state.messages.map((message) => {
-    const type = message._getType();
+  const lead = state.lead;
 
-    return `${type}: ${String(message.content)}`;
-  });
+  const conversation = state.messages
+    .slice(0, -1)
+    .map((message) => {
+      const role =
+        message._getType() === "human" ? "Customer" : "Assistant";
 
-  const decision = await runJev({
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : JSON.stringify(message.content);
+
+      return `${role}: ${content}`;
+    });
+
+  const jevDecision = await runJev({
     latestMessage: state.newMessage,
-
-    lead: state.lead ?? {
-      service: null,
-      problem: null,
-      urgency: null,
-      propertyType: null,
-      address: null,
-      city: null,
-      state: null,
-      zipCode: null,
-      preferredTime: null,
+    lead: {
+      service: lead?.service ?? null,
+      problem: lead?.problem ?? null,
+      urgency: lead?.urgency ?? null,
+      propertyType: lead?.propertyType ?? null,
+      address: lead?.address ?? null,
+      city: lead?.city ?? null,
+      state: lead?.state ?? null,
+      zipCode: lead?.zipCode ?? null,
+      preferredTime: lead?.preferredTime ?? null,
     },
-
     conversation,
   });
 
-  console.log("🧪 Test Jev decision:", decision);
-
-  return {
-    jevDecision: decision,
-  };
+  return { jevDecision };
 }
