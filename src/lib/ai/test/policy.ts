@@ -6,53 +6,31 @@ export type UnclearAction =
   | "HUMAN_OFFER"
   | "LOW_INTENT";
 
-export function getUnclearAction(unclearCount: number): UnclearAction {
+export function getUnclearAction(
+  unclearCount: number,
+): UnclearAction {
   if (unclearCount <= 1) return "NORMAL";
   if (unclearCount === 2) return "OPTIONS";
   if (unclearCount === 3) return "HUMAN_OFFER";
+
   return "LOW_INTENT";
-}
-
-export function isClearlyMeaningful(message: string): boolean {
-  const text = message.trim().toLowerCase();
-
-  if (!text) return false;
-
-  const unclearMessages = new Set([
-    "hi",
-    "hello",
-    "hey",
-    "ok",
-    "okay",
-    "oky",
-    "k",
-    "hmm",
-    "hm",
-    "fine",
-    "alright",
-    "sure",
-    "ouch",
-    "yeah",
-    "yep",
-    "no",
-    "thanks",
-    "thank you",
-    "never mind",
-  ]);
-
-  return !unclearMessages.has(text);
 }
 
 export function applyPolicy(
   state: AITestStateType,
 ): Partial<AITestStateType> {
-  const meaningful = isClearlyMeaningful(state.newMessage);
+  /*
+   * Jev evaluates whether the latest message is meaningful
+   * in the context of the conversation.
+   *
+   * The Test Lab graph must run Jev before this policy.
+   */
+  const meaningful =
+    state.jevDecision?.isMeaningfulResponse === true;
 
   /*
    * Meaningful message:
-   *
-   * If the customer was previously marked low-intent,
-   * reopen the conversation.
+   * Reset the unclear counter and reopen the conversation.
    */
   if (meaningful) {
     return {
@@ -65,12 +43,9 @@ export function applyPolicy(
   }
 
   /*
-   * Already low-intent:
-   *
-   * Do NOT increase the counter forever.
-   * Do NOT ask another question.
-   * Do NOT call the AI.
-   * Just stay silent.
+   * Already in silent mode:
+   * Keep the conversation silent until Jev identifies
+   * meaningful new input.
    */
   if (state.lowIntent) {
     return {
@@ -83,13 +58,13 @@ export function applyPolicy(
   }
 
   const nextCount = state.unclearCount + 1;
-  const action = getUnclearAction(nextCount);
+  const nextAction = getUnclearAction(nextCount);
 
   /*
    * Fourth unclear message:
-   * enter silent/low-intent mode.
+   * Enter silent mode.
    */
-  if (action === "LOW_INTENT") {
+  if (nextAction === "LOW_INTENT") {
     return {
       unclearCount: nextCount,
       lowIntent: true,
@@ -101,9 +76,9 @@ export function applyPolicy(
 
   /*
    * Third unclear message:
-   * offer human help.
+   * Offer human assistance.
    */
-  if (action === "HUMAN_OFFER") {
+  if (nextAction === "HUMAN_OFFER") {
     return {
       unclearCount: nextCount,
       lowIntent: false,
@@ -115,9 +90,9 @@ export function applyPolicy(
 
   /*
    * Second unclear message:
-   * give options.
+   * Offer simple choices.
    */
-  if (action === "OPTIONS") {
+  if (nextAction === "OPTIONS") {
     return {
       unclearCount: nextCount,
       lowIntent: false,
@@ -128,7 +103,8 @@ export function applyPolicy(
   }
 
   /*
-   * First unclear message.
+   * First unclear message:
+   * Ask a simple clarification.
    */
   return {
     unclearCount: nextCount,
