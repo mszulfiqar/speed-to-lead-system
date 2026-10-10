@@ -32,13 +32,27 @@ type TestLead = {
   preferredTime: string | null;
 };
 
+
 type TestJevDecision = {
+  // Is the customer's message meaningful in context?
   isMeaningfulResponse: boolean;
+
+  // Does the message contain new lead information?
   shouldExtract: boolean;
+
+  // Does the situation require human involvement?
   shouldHandoff: boolean;
+
+  // Is the customer asking to schedule service?
   isAppointmentRequest: boolean;
+
+  // Is there a potential safety emergency?
   isEmergency: boolean;
+
+  // Is the message spam or abusive content?
+  isSpam: boolean;
 };
+
 
 export const AITestState = Annotation.Root({
   /*

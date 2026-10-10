@@ -1,3 +1,4 @@
+
 import type { AITestStateType } from "./state";
 
 export type UnclearAction =
@@ -19,19 +20,24 @@ export function getUnclearAction(
 export function applyPolicy(
   state: AITestStateType,
 ): Partial<AITestStateType> {
-  /*
-   * Jev evaluates whether the latest message is meaningful
-   * in the context of the conversation.
-   *
-   * The Test Lab graph must run Jev before this policy.
-   */
-  const meaningful =
-    state.jevDecision?.isMeaningfulResponse === true;
+  const decision = state.jevDecision;
 
   /*
-   * Meaningful message:
-   * Reset the unclear counter and reopen the conversation.
+   * Spam takes priority over normal conversation handling.
+   * The graph will use this decision to suppress AI replies.
    */
+  if (decision?.isSpam === true) {
+    return {
+      action: "CONTINUE",
+    };
+  }
+
+  /*
+   * Meaningful input resets the unclear-message counter.
+   */
+  const meaningful =
+    decision?.isMeaningfulResponse === true;
+
   if (meaningful) {
     return {
       unclearCount: 0,
@@ -43,9 +49,7 @@ export function applyPolicy(
   }
 
   /*
-   * Already in silent mode:
-   * Keep the conversation silent until Jev identifies
-   * meaningful new input.
+   * Remain in silent mode until meaningful input arrives.
    */
   if (state.lowIntent) {
     return {
@@ -60,10 +64,6 @@ export function applyPolicy(
   const nextCount = state.unclearCount + 1;
   const nextAction = getUnclearAction(nextCount);
 
-  /*
-   * Fourth unclear message:
-   * Enter silent mode.
-   */
   if (nextAction === "LOW_INTENT") {
     return {
       unclearCount: nextCount,
@@ -74,10 +74,6 @@ export function applyPolicy(
     };
   }
 
-  /*
-   * Third unclear message:
-   * Offer human assistance.
-   */
   if (nextAction === "HUMAN_OFFER") {
     return {
       unclearCount: nextCount,
@@ -88,10 +84,6 @@ export function applyPolicy(
     };
   }
 
-  /*
-   * Second unclear message:
-   * Offer simple choices.
-   */
   if (nextAction === "OPTIONS") {
     return {
       unclearCount: nextCount,
@@ -102,10 +94,6 @@ export function applyPolicy(
     };
   }
 
-  /*
-   * First unclear message:
-   * Ask a simple clarification.
-   */
   return {
     unclearCount: nextCount,
     lowIntent: false,
