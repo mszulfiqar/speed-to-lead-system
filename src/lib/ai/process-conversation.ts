@@ -1,17 +1,15 @@
-import { eq, asc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 
 import { messages } from "@/db/schema/message";
-import { leads } from "@/db/schema/lead";
 import { conversations } from "@/db/schema/conversation";
-import { customers } from "@/db/schema/customer";
 
-import { agent } from "./agent";
-import { extractLeadInformation } from "./lead-extraction";
+import { hvacGraph } from "./graph/graph";
 
 export async function processConversation(
-  conversationId: string
+  conversationId: string,
+  newMessage: string
 ) {
   // --------------------------------------------------
   // 1. Get conversation
@@ -33,171 +31,55 @@ export async function processConversation(
       "Conversation not found"
     );
   }
-
-  // --------------------------------------------------
-  // 2. Get lead
-  // --------------------------------------------------
-
-  const [lead] = await db
-    .select()
-    .from(leads)
-    .where(
-      eq(
-        leads.id,
-        conversation.leadId
-      )
-    )
-    .limit(1);
-
-  if (!lead) {
-    throw new Error(
-      "Lead not found"
+    // Human has taken over / is expected to respond.
+  if (conversation.status === "WAITING_FOR_HUMAN") {
+    console.log(
+      "👤 Conversation is waiting for human. Skipping AI."
     );
+
+    return null;
   }
-
   // --------------------------------------------------
-  // 3. Get customer
-  // --------------------------------------------------
-
-  const [customer] = await db
-    .select()
-    .from(customers)
-    .where(
-      eq(
-        customers.id,
-        conversation.customerId
-      )
-    )
-    .limit(1);
-
-  // --------------------------------------------------
-  // 4. Get conversation history
-  // --------------------------------------------------
-
-  const conversationMessages =
-    await db
-      .select()
-      .from(messages)
-      .where(
-        eq(
-          messages.conversationId,
-          conversationId
-        )
-      )
-      .orderBy(
-        asc(messages.createdAt)
-      );
-
-  // --------------------------------------------------
-  // 5. Convert DB messages to LangChain messages
-  // --------------------------------------------------
-
-  const agentMessages =
-    conversationMessages.map(
-      (message) => ({
-        role:
-          message.senderType ===
-          "CUSTOMER"
-            ? "user"
-            : message.senderType ===
-              "AI"
-            ? "assistant"
-            : "user",
-
-        content: message.content,
-      })
-    );
-
-  // --------------------------------------------------
-  // 6. Build lead context
+  // 2. Run LangGraph
   //
-  // This gives the AI information that came from
-  // the lead form/database.
-  // --------------------------------------------------
-
-  const leadContext = `
-Known customer information:
-
-Customer name:
-${customer?.name ?? "Not provided"}
-
-Service selected:
-${lead.service ?? "Not provided"}
-
-Problem already described:
-${lead.problem ?? "Not provided"}
-
-Property type:
-${lead.propertyType ?? "Not provided"}
-
-Address:
-${lead.address ?? "Not provided"}
-
-City:
-${lead.city ?? "Not provided"}
-
-State:
-${lead.state ?? "Not provided"}
-
-ZIP code:
-${lead.zipCode ?? "Not provided"}
-
-Preferred time:
-${lead.preferredTime ?? "Not provided"}
-
-Use this information when responding to the customer.
-
-Do not ask the customer for information that is already known.
-
-If this is the customer's first message after submitting the lead
-form, acknowledge the service and problem they already provided,
-then ask a useful follow-up question to understand the problem
-in more detail.
-`;
-
-  // --------------------------------------------------
-  // 7. Add lead context to the conversation
-  // --------------------------------------------------
-
-  const messagesWithContext = [
-    {
-      role: "system" as const,
-      content: leadContext,
-    },
-
-    ...agentMessages,
-  ];
-
-  // --------------------------------------------------
-  // 8. Run conversational AI
+  // LangGraph is now responsible for:
   //
-  // Gemini is primary.
-  // Mistral is fallback.
+  // - Loading conversation state
+  // - Running the AI agent
+  // - Running Jev
+  // - Lead extraction
+  // - Updating the lead
+  // - Appointment detection
+  // - Human handoff
   // --------------------------------------------------
 
   let result;
 
   try {
-    result = await agent.invoke(
-      {
-        messages:
-          messagesWithContext,
-      },
-      {
-        configurable: {
-          thread_id:
-            conversationId,
-        },
-      }
-    );
+    result = await hvacGraph.invoke({
+      conversationId,
+
+      customerId: "",
+      leadId: "",
+
+      newMessage,
+
+      messages: [],
+      lead: null,
+
+      action: null,
+      handoffReason: null,
+      pendingTool: null,
+      toolResult: null,
+    });
   } catch (error) {
     console.error(
-      "❌ ALL CHAT MODELS FAILED:",
+      "❌ LangGraph failed:",
       error
     );
 
     const aiError = new Error(
-      "AI_MODELS_FAILED"
+      "AI_GRAPH_FAILED"
     );
 
     aiError.cause = error;
@@ -206,24 +88,37 @@ in more detail.
   }
 
   // --------------------------------------------------
-  // 9. Get AI response
+  // 3. Determine customer-facing response
   // --------------------------------------------------
 
-  const lastMessage =
-    result.messages[
-      result.messages.length - 1
-    ];
+  let aiContent: string;
 
-  const aiContent =
-    typeof lastMessage.content ===
-    "string"
-      ? lastMessage.content
-      : JSON.stringify(
-          lastMessage.content
-        );
+  if (result.action === "HANDOFF") {
+    aiContent =
+      "Thanks! I've got your request. I'll have someone from our team review the details and confirm the appointment with you shortly.";
+  } else {
+    const lastMessage =
+      result.messages[
+        result.messages.length - 1
+      ];
+
+    if (!lastMessage) {
+      throw new Error(
+        "LangGraph returned no response message"
+      );
+    }
+
+    aiContent =
+      typeof lastMessage.content ===
+      "string"
+        ? lastMessage.content
+        : JSON.stringify(
+            lastMessage.content
+          );
+  }
 
   // --------------------------------------------------
-  // 10. Save AI response
+  // 4. Save AI response
   // --------------------------------------------------
 
   const [aiMessage] =
@@ -236,126 +131,13 @@ in more detail.
       })
       .returning();
 
-  // --------------------------------------------------
-  // 11. Build conversation text
-  //
-  // Used by the extraction model.
-  // --------------------------------------------------
-
-  const updatedMessages = [
-    ...conversationMessages,
-    aiMessage,
-  ];
-
-  const conversationText =
-    updatedMessages
-      .map((message) => {
-        const speaker =
-          message.senderType ===
-          "CUSTOMER"
-            ? "CUSTOMER"
-            : message.senderType ===
-              "AI"
-            ? "AI"
-            : "HUMAN";
-
-        return `${speaker}: ${message.content}`;
-      })
-      .join("\n");
+  console.log(
+    "💬 AI response saved:",
+    aiMessage.id
+  );
 
   // --------------------------------------------------
-  // 12. Extract lead information
-  //
-  // Extraction failure must NOT destroy the AI response.
-  // --------------------------------------------------
-
-  try {
-    const extracted =
-      await extractLeadInformation(
-        conversationText
-      );
-
-    console.log(
-      "📋 EXTRACTED LEAD INFORMATION:",
-      extracted
-    );
-
-    // ------------------------------------------------
-    // 13. Merge existing + newly extracted data
-    // ------------------------------------------------
-
-    const updatedLead = {
-      service:
-        extracted.service ??
-        lead.service,
-
-      problem:
-        extracted.problem ??
-        lead.problem,
-
-      urgency:
-        extracted.urgency ??
-        lead.urgency,
-
-      propertyType:
-        extracted.propertyType ??
-        lead.propertyType,
-
-      address:
-        extracted.address ??
-        lead.address,
-
-      city:
-        extracted.city ??
-        lead.city,
-
-      state:
-        extracted.state ??
-        lead.state,
-
-      zipCode:
-        extracted.zipCode ??
-        lead.zipCode,
-
-      preferredTime:
-        extracted.preferredTime ??
-        lead.preferredTime,
-    };
-
-    // ------------------------------------------------
-    // 14. Update lead
-    // ------------------------------------------------
-
-    await db
-      .update(leads)
-      .set({
-        ...updatedLead,
-        updatedAt: new Date(),
-      })
-      .where(
-        eq(
-          leads.id,
-          conversation.leadId
-        )
-      );
-
-    console.log(
-      "📋 UPDATED LEAD:",
-      updatedLead
-    );
-  } catch (error) {
-    console.error(
-      "⚠️ LEAD EXTRACTION FAILED:",
-      error
-    );
-
-    console.log(
-      "The AI response was saved successfully."
-    );
-  }
-
-  // --------------------------------------------------
-  // 15. Return AI message
+  // 5. Return AI message
   // --------------------------------------------------
 
   return aiMessage;

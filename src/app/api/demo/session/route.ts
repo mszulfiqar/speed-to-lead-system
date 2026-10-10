@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       .values({
         source: databaseSource,
         sessionToken,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       })
       .returning({
         id: demoSessions.id,
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 30,
+      maxAge: 24 * 60 *60 * 30,
     });
 
     return response;

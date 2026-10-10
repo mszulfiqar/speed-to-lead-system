@@ -315,10 +315,21 @@ export async function POST(
      * Run AI
      */
 
-    const aiMessage =
-      await processConversation(
-        conversationId
-      );
+    let aiMessage = null;
+
+if (
+  conversation.status === "AI_ACTIVE"
+) {
+  aiMessage =
+    await processConversation(
+      conversationId,
+      prompt.trim()
+    );
+} else {
+  console.log(
+    `👤 AI skipped. Conversation status: ${conversation.status}`
+  );
+}
 
     /*
      * Load complete conversation
