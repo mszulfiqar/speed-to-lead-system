@@ -13,10 +13,10 @@ import type { HVACStateType } from "../state";
  * ============================================================
  */
 
-const primaryModel = new ChatGoogle({
-  model: "gemini-3.6-flash",
-  temperature: 0.7,
-  maxRetries: 1,
+const primaryModel = new ChatOpenRouter({
+  model: "deepseek/deepseek-v4-flash",
+  temperature: 0.1,
+  maxRetries: 2,
 });
 
 /*
