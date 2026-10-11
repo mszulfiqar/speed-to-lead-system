@@ -1,3 +1,4 @@
+
 type JevInput = {
   latestMessage: string;
 
@@ -22,6 +23,7 @@ export type JevDecision = {
   shouldHandoff: boolean;
   isAppointmentRequest: boolean;
   isEmergency: boolean;
+  isSpam: boolean;
 };
 
 export async function runJev(
@@ -37,7 +39,6 @@ export async function runJev(
     "https://api.typesafe.ai/v1/systemone",
     {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
@@ -55,15 +56,51 @@ export async function runJev(
         questions: {
           /*
            * ======================================================
+           * SPAM DETECTION
+           * ======================================================
+           */
+          isSpam: {
+            type: "noul",
+            instructions: {
+              question:
+                "Is the latest customer message spam or abusive content?",
+              inspect: "latestMessage, conversation",
+              focus:
+                "Look for unsolicited promotional content, scams, malicious links, or abuse. Do not confuse repetition, emojis, short messages, or low intent with spam.",
+            },
+            criteria: {
+              true: {
+                what:
+                  "The message is clearly unsolicited promotional spam, a scam, malicious solicitation, or abusive content.",
+                examples: [
+                  "Buy our marketing services! Visit our website for a discount.",
+                  "Repeated unsolicited advertisements unrelated to HVAC service.",
+                  "Unsolicited scam messages containing suspicious links.",
+                ],
+              },
+              false: {
+                what:
+                  "The message is a legitimate customer communication or there is insufficient evidence of spam.",
+                examples: [
+                  "Hi",
+                  "My AC isn't cooling.",
+                  "How much does AC repair cost?",
+                  "Hi 😊",
+                  "A repeated question about an HVAC service.",
+                  "Okay",
+                  "I'm not ready to book yet.",
+                ],
+              },
+            },
+          },
+
+          /*
+           * ======================================================
            * MEANINGFUL RESPONSE
            * ======================================================
-           *
-           * This is the most important decision for our current
-           * Test Lab problem.
            */
           isMeaningfulResponse: {
             type: "noul",
-
             instructions: `
 Determine whether the customer's latest message is meaningful
 in the context of the conversation.
@@ -127,14 +164,12 @@ Do not mark a greeting such as "hi", "hello", or "hey" as false.
            */
           shouldExtract: {
             type: "noul",
-
             instructions:
               "Does the latest customer message contain explicit new or changed information that should be added or updated in the structured lead data?",
 
             criteria: {
               true:
                 "The customer explicitly provides new or changed lead information such as service, problem, urgency, property type, address, city, state, ZIP code, or preferred time.",
-
               false:
                 "The customer does not provide explicit new or changed lead information. Never infer missing information.",
             },
@@ -147,7 +182,6 @@ Do not mark a greeting such as "hi", "hello", or "hey" as false.
            */
           shouldHandoff: {
             type: "noul",
-
             instructions:
               "Does the conversation currently require human involvement?",
 
@@ -216,13 +250,23 @@ Do not mark a greeting such as "hi", "hello", or "hey" as false.
 
   /*
    * Basic response validation.
-   *
-   * This prevents confusing undefined/null values from silently
-   * entering the graph if the API response changes.
    */
   if (!data?.answers) {
     throw new Error(
       "Jev API returned an invalid response"
+    );
+  }
+
+  /*
+   * Validate the new spam answer so a malformed API response
+   * cannot silently be treated as a valid classification.
+   */
+  if (
+    typeof data.answers.isSpam?.noul !== "number" ||
+    !Number.isFinite(data.answers.isSpam.noul)
+  ) {
+    throw new Error(
+      "Jev API returned an invalid isSpam answer"
     );
   }
 
@@ -241,5 +285,8 @@ Do not mark a greeting such as "hi", "hello", or "hey" as false.
 
     isEmergency:
       data.answers.isEmergency?.noul > 0.5,
+
+    isSpam:
+      data.answers.isSpam.noul > 0.5,
   };
 }
