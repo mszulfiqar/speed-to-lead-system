@@ -206,7 +206,15 @@ export async function runLeadExtractor(
 ): Promise<ExtractedLead> {
   const conversation = state.messages
     .map((message) => {
-      return `${message._getType()}: ${message.content}`;
+      const type = message._getType();
+      const role =
+        type === "human"
+          ? "CUSTOMER"
+          : type === "ai"
+            ? "ASSISTANT"
+            : "SYSTEM";
+
+      return `${role}: ${message.content}`;
     })
     .join("\n");
 
