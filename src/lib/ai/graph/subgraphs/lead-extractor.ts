@@ -146,6 +146,30 @@ IMPORTANT RULES:
    Use the corrected value for the relevant field. Do not change
    unrelated fields just because another field was corrected.
 
+
+10. ONLY THE CUSTOMER CAN ESTABLISH THEIR PREFERENCES.
+    Extract preferredTime only from an explicit customer statement
+    expressing when they want or are available for a visit.
+
+    Do not use the assistant's suggestions, assumptions, or statements
+    as evidence of the customer's preferred time.
+
+    Examples:
+    - Assistant: "We can get someone out soon."
+      Customer has not stated a preferred time.
+      Result: preferredTime = null, unless a previous customer
+      statement established a valid preference.
+
+    - Customer: "I need someone today."
+      Result: preferredTime = "today"
+
+    - Customer: "As soon as possible, please."
+      Result: preferredTime = "ASAP"
+
+11. URGENCY DOES NOT DETERMINE PREFERRED TIME.
+    A serious problem does not automatically mean the customer wants
+    an ASAP appointment. Keep urgency and preferredTime separate.
+
 FIELD GUIDANCE:
 
 Service categories:
