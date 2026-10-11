@@ -66,10 +66,7 @@ const workflow = new StateGraph(HVACState)
     // -------------------------
 
     .addEdge(START, "loadState")
-
-    .addEdge("loadState", "aiAgent")
-
-    .addEdge("aiAgent", "jev")
+    .addEdge("loadState", "jev")
 
     // -------------------------
     // Jev routing
