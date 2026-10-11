@@ -1,3 +1,4 @@
+
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
@@ -31,7 +32,8 @@ export async function processConversation(
       "Conversation not found"
     );
   }
-    // Human has taken over / is expected to respond.
+
+  // Human has taken over / is expected to respond.
   if (conversation.status === "WAITING_FOR_HUMAN") {
     console.log(
       "👤 Conversation is waiting for human. Skipping AI."
@@ -39,18 +41,9 @@ export async function processConversation(
 
     return null;
   }
+
   // --------------------------------------------------
   // 2. Run LangGraph
-  //
-  // LangGraph is now responsible for:
-  //
-  // - Loading conversation state
-  // - Running the AI agent
-  // - Running Jev
-  // - Lead extraction
-  // - Updating the lead
-  // - Appointment detection
-  // - Human handoff
   // --------------------------------------------------
 
   let result;
@@ -88,7 +81,26 @@ export async function processConversation(
   }
 
   // --------------------------------------------------
-  // 3. Determine customer-facing response
+  // 3. Suppress spam responses
+  // --------------------------------------------------
+
+  // Emergency handling always takes priority.
+  // Do not save an AI response for spam unless the
+  // message was also classified as an emergency.
+  if (
+    result.jevDecision?.isSpam === true &&
+    result.jevDecision.isEmergency !== true
+  ) {
+    console.log(
+      "🚫 Spam detected. Skipping AI response save:",
+      conversationId
+    );
+
+    return null;
+  }
+
+  // --------------------------------------------------
+  // 4. Determine customer-facing response
   // --------------------------------------------------
 
   let aiContent: string;
@@ -109,8 +121,7 @@ export async function processConversation(
     }
 
     aiContent =
-      typeof lastMessage.content ===
-      "string"
+      typeof lastMessage.content === "string"
         ? lastMessage.content
         : JSON.stringify(
             lastMessage.content
@@ -118,18 +129,23 @@ export async function processConversation(
   }
 
   // --------------------------------------------------
-  // 4. Save AI response
+  // 5. Save AI response
   // --------------------------------------------------
 
-  const [aiMessage] =
-    await db
-      .insert(messages)
-      .values({
-        conversationId,
-        senderType: "AI",
-        content: aiContent,
-      })
-      .returning();
+  const [aiMessage] = await db
+    .insert(messages)
+    .values({
+      conversationId,
+      senderType: "AI",
+      content: aiContent,
+    })
+    .returning();
+
+  if (!aiMessage) {
+    throw new Error(
+      "Failed to save AI response"
+    );
+  }
 
   console.log(
     "💬 AI response saved:",
@@ -137,7 +153,7 @@ export async function processConversation(
   );
 
   // --------------------------------------------------
-  // 5. Return AI message
+  // 6. Return AI message
   // --------------------------------------------------
 
   return aiMessage;
