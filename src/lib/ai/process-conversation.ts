@@ -109,7 +109,7 @@ export async function processConversation(
 
     return null;
   }
-
+  
   // 5. Determine the normal customer-facing response.
   let aiContent: string;
 
@@ -126,11 +126,37 @@ export async function processConversation(
       );
     }
 
-    aiContent =
-      typeof lastMessage.content === "string"
-        ? lastMessage.content
-        : JSON.stringify(lastMessage.content);
+    const content = lastMessage.content;
+
+    if (typeof content === "string") {
+      aiContent = content;
+    } else if (Array.isArray(content)) {
+      aiContent = content
+        .filter(
+          (block): block is { type: "text"; text: string } =>
+            typeof block === "object" &&
+            block !== null &&
+            "type" in block &&
+            block.type === "text" &&
+            "text" in block &&
+            typeof block.text === "string"
+        )
+        .map((block) => block.text)
+        .join("\n")
+        .trim();
+    } else {
+      throw new Error(
+        "AI returned an unsupported response content format"
+      );
+    }
+
+    if (!aiContent) {
+      throw new Error(
+        "AI returned no customer-facing text"
+      );
+    }
   }
+
 
   // 6. Save the normal AI response.
   const [aiMessage] = await db
