@@ -1,20 +1,3 @@
-// import { runLeadExtractor } from "../subgraphs/lead-extractor";
-// import type { HVACStateType } from "../state";
-
-// export async function leadExtractorNode(
-//   state: HVACStateType
-// ): Promise<Partial<HVACStateType>> {
-//   const extractedLead = await runLeadExtractor(state);
-
-//   console.log("📋 Extracted lead:", extractedLead);
-
-//   return {
-//     lead: extractedLead,
-//   };
-// }
-
-
-
 import { runLeadExtractor } from "../subgraphs/lead-extractor";
 import type { HVACStateType } from "../state";
 
