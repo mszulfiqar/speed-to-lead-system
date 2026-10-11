@@ -1,4 +1,3 @@
-
 import {
     END,
     START,
@@ -14,6 +13,7 @@ import { updateLeadNode } from "./nodes/update-lead";
 import { loadState } from "./nodes/load-state";
 
 import {
+    routeBeforeAgent,
     routeAfterJev,
     routeAfterLeadUpdate,
 } from "./routes";
@@ -28,9 +28,9 @@ const workflow = new StateGraph(HVACState)
 
     .addNode("loadState", loadState)
 
-    .addNode("aiAgent", aiAgent)
-
     .addNode("jev", jevNode)
+
+    .addNode("aiAgent", aiAgent)
 
     .addNode("emergency", async () => {
         console.log("🚨 Emergency flow");
@@ -69,11 +69,27 @@ const workflow = new StateGraph(HVACState)
     .addEdge("loadState", "jev")
 
     // -------------------------
-    // Jev routing
+    // First routing:
+    // Jev classifies before AI generation
     // -------------------------
 
     .addConditionalEdges(
         "jev",
+        routeBeforeAgent,
+        {
+            emergency: "emergency",
+            spam: "spam",
+            aiAgent: "aiAgent",
+        }
+    )
+
+    // -------------------------
+    // Second routing:
+    // Preserve existing normal-message behavior
+    // -------------------------
+
+    .addConditionalEdges(
+        "aiAgent",
         routeAfterJev,
         {
             emergency: "emergency",
@@ -92,7 +108,7 @@ const workflow = new StateGraph(HVACState)
     .addEdge("appointment", "extract")
 
     // -------------------------
-    // Extraction
+    // Lead extraction
     // -------------------------
 
     .addEdge("extract", "updateLead")
