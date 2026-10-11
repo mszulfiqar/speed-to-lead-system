@@ -22,7 +22,13 @@ import { handoffNode } from "./nodes/handoff";
 const workflow = new StateGraph(HVACState)
     .addNode("loadState", loadState)
     .addNode("jev", jevNode)
-    .addNode("aiAgent", aiAgent)
+    // .addNode("aiAgent", aiAgent)
+    .addNode("aiAgent", async (state) => {
+        console.log("🤖 AI AGENT NODE ENTERED");
+        const result = await aiAgent(state);
+        console.log("🤖 AI AGENT NODE COMPLETED");
+        return result;
+    })
     .addNode("emergency", async () => {
         console.log("🚨 Emergency flow");
         return {};
@@ -75,6 +81,6 @@ const workflow = new StateGraph(HVACState)
     .addEdge("continue", END);
 
 
-    // console.log(workflow.compile());
+// console.log(workflow.compile());
 
 export const hvacGraph = workflow.compile();
