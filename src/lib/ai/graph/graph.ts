@@ -1,3 +1,4 @@
+
 import {
     END,
     START,
@@ -16,6 +17,7 @@ import {
     routeAfterJev,
     routeAfterLeadUpdate,
 } from "./routes";
+
 import { handoffNode } from "./nodes/handoff";
 
 const workflow = new StateGraph(HVACState)
@@ -32,6 +34,11 @@ const workflow = new StateGraph(HVACState)
 
     .addNode("emergency", async () => {
         console.log("🚨 Emergency flow");
+        return {};
+    })
+
+    .addNode("spam", async () => {
+        console.log("🚫 Spam detected; stopping AI workflow");
         return {};
     })
 
@@ -73,6 +80,7 @@ const workflow = new StateGraph(HVACState)
         routeAfterJev,
         {
             emergency: "emergency",
+            spam: "spam",
             appointment: "appointment",
             handoff: "handoff",
             extract: "extract",
@@ -110,6 +118,8 @@ const workflow = new StateGraph(HVACState)
     // -------------------------
 
     .addEdge("emergency", END)
+
+    .addEdge("spam", END)
 
     .addEdge("handoff", END)
 
