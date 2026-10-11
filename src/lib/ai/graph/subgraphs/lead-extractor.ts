@@ -70,7 +70,7 @@ const ExtractorState = Annotation.Root({
  * Extractor model
  */
 const extractorModel = new ChatOpenRouter({
-  model: "mistralai/mistral-nemo",
+  model: "deepseek/deepseek-v4-flash",
   temperature: 0,
   maxRetries: 1,
 }).withStructuredOutput(extractionSchema);
