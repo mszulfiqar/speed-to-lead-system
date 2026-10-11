@@ -1,3 +1,4 @@
+
 import { Annotation } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 
@@ -102,6 +103,11 @@ export const HVACState = Annotation.Root({
      * Is there an emergency/safety issue?
      */
     isEmergency: boolean;
+
+    /*
+     * Is the latest customer message clearly spam?
+     */
+    isSpam: boolean;
   } | null>(),
 
   /*
