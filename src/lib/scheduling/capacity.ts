@@ -3,6 +3,7 @@ import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { appointments } from "@/db/schema/appointment";
 import { HVAC_SCHEDULING_CONFIG } from "./config";
+import { calculateSlotCapacity } from "./capacity-rules";
 
 export async function getSlotCapacity({
   businessId,
@@ -19,7 +20,9 @@ export async function getSlotCapacity({
 
   const overlappingAppointments = await db
     .select({
-      id: appointments.id,
+      startTime: appointments.startTime,
+      endTime: appointments.endTime,
+      status: appointments.status,
     })
     .from(appointments)
     .where(
@@ -31,13 +34,10 @@ export async function getSlotCapacity({
       ),
     );
 
-  const capacity = HVAC_SCHEDULING_CONFIG.maxBookingsPerSlot;
-  const occupied = overlappingAppointments.length;
-
-  return {
-    occupied,
-    capacity,
-    availableBookings: Math.max(0, capacity - occupied),
-    isAvailable: occupied < capacity,
-  };
+  return calculateSlotCapacity({
+    appointments: overlappingAppointments,
+    startTime,
+    endTime,
+    capacity: HVAC_SCHEDULING_CONFIG.maxBookingsPerSlot,
+  });
 }
