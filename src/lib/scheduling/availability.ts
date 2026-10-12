@@ -1,9 +1,9 @@
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { appointments } from "@/db/schema/appointment";
 import { businesses } from "@/db/schema/business";
 import { getServiceZone, HVAC_SCHEDULING_CONFIG } from "./config";
+import { getSlotCapacity } from "./capacity";
 import { getEligibleWindows } from "./slot-rules";
 
 type AvailabilityOptions = {
@@ -122,7 +122,7 @@ export async function getAvailableSlots({
   for (let offset = 0; offset <= daysAhead; offset++) {
     const date = addDays(today, offset);
 
-    // Reuse the same tested scheduling rules used by our unit tests.
+    // Use the same scheduling rules covered by our unit tests.
     const eligibleWindows = getEligibleWindows({
       date,
       bookingMode: zone.bookingMode,
@@ -131,37 +131,21 @@ export async function getAvailableSlots({
     });
 
     for (const { startTime, endTime } of eligibleWindows) {
-      // Count existing appointments that overlap this arrival window.
-      const overlappingAppointments = await db
-        .select({
-          id: appointments.id,
-        })
-        .from(appointments)
-        .where(
-          and(
-            eq(appointments.businessId, businessId),
-            lt(appointments.startTime, endTime),
-            gt(appointments.endTime, startTime),
-            inArray(appointments.status, [
-              "PENDING",
-              "CONFIRMED",
-            ]),
-          ),
-        );
+      // Check current database capacity for this arrival window.
+      const capacity = await getSlotCapacity({
+        businessId,
+        startTime,
+        endTime,
+      });
 
-      const occupied = overlappingAppointments.length;
-      const capacity =
-        HVAC_SCHEDULING_CONFIG.maxBookingsPerSlot;
-
-      // Hide fully booked windows.
-      if (occupied >= capacity) {
+      if (!capacity.isAvailable) {
         continue;
       }
 
       slots.push({
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        availableBookings: capacity - occupied,
+        availableBookings: capacity.availableBookings,
       });
     }
   }
