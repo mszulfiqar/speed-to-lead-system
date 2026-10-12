@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx src/db/seed.ts",
-    "test": "tsx --test src/lib/scheduling/*.test.ts"
+    "test": "tsx --test src/lib/scheduling/*.test.ts",
+    "test:integration": "tsx --test src/lib/scheduling/*.integration.test.ts"
 
   },
   "dependencies": {
