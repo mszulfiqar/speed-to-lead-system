@@ -33,7 +33,7 @@ test("Saturday only offers windows inside Saturday hours", () => {
 
   assert.deepEqual(
     slots.map((slot) => slot.window.start),
-    ["13:00"],
+    ["10:00", "13:00"],
   );
 });
 
@@ -62,12 +62,26 @@ test("restricted zone only offers permitted afternoon windows", () => {
   );
 });
 
-test("slots inside the two-hour notice period are excluded", () => {
+test("a slot exactly at the two-hour cutoff is allowed", () => {
   const slots = getEligibleWindows({
     date: "2026-10-13",
     bookingMode: "DIRECT",
     timezone,
     earliestStart: makeEarliestStart("2026-10-13", "10:00"),
+  });
+
+  assert.deepEqual(
+    slots.map((slot) => slot.window.start),
+    ["10:00", "13:00", "15:00"],
+  );
+});
+
+test("slots before the two-hour cutoff are excluded", () => {
+  const slots = getEligibleWindows({
+    date: "2026-10-13",
+    bookingMode: "DIRECT",
+    timezone,
+    earliestStart: makeEarliestStart("2026-10-13", "10:01"),
   });
 
   assert.deepEqual(
