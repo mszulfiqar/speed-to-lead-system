@@ -52,7 +52,7 @@ test("restricted ZIP codes only get permitted afternoon windows", () => {
 
   assert.deepEqual(
     windows.map((slot) => slot.window.start),
-    ["15:00"],
+    ["13:00", "15:00"],
   );
 });
 

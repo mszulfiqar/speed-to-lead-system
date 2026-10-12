@@ -2,9 +2,13 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { businesses } from "@/db/schema/business";
-import { getServiceZone, HVAC_SCHEDULING_CONFIG } from "./config";
+import { getServiceZone } from "./config";
 import { getSlotCapacity } from "./capacity";
-import { getEligibleWindows } from "./slot-rules";
+import {
+  addDays,
+  getEligibleAvailabilityWindows,
+  getLocalDate,
+} from "./availability-rules";
 
 type AvailabilityOptions = {
   businessId: string;
@@ -19,51 +23,6 @@ type ArrivalSlot = {
   availableBookings: number;
 };
 
-function getDateParts(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-
-  return {
-    year: Number(values.year),
-    month: Number(values.month),
-    day: Number(values.day),
-  };
-}
-
-function getLocalDate(date: Date, timeZone: string): string {
-  const parts = getDateParts(date, timeZone);
-
-  return [
-    parts.year,
-    String(parts.month).padStart(2, "0"),
-    String(parts.day).padStart(2, "0"),
-  ].join("-");
-}
-
-function addDays(date: string, days: number): string {
-  const result = new Date(`${date}T12:00:00.000Z`);
-
-  result.setUTCDate(result.getUTCDate() + days);
-
-  return [
-    result.getUTCFullYear(),
-    String(result.getUTCMonth() + 1).padStart(2, "0"),
-    String(result.getUTCDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 export async function getAvailableSlots({
   businessId,
   zipCode,
@@ -76,6 +35,10 @@ export async function getAvailableSlots({
     daysAhead > 14
   ) {
     throw new Error("daysAhead must be between 0 and 14");
+  }
+
+  if (Number.isNaN(now.getTime())) {
+    throw new Error("now must be a valid date");
   }
 
   const zone = getServiceZone(zipCode);
@@ -106,32 +69,25 @@ export async function getAvailableSlots({
     throw new Error("Business not found");
   }
 
-  const timeZone = business.timezone;
+  const timezone = business.timezone;
 
   // Validate the business's configured timezone.
-  new Intl.DateTimeFormat("en-US", { timeZone });
+  new Intl.DateTimeFormat("en-US", { timeZone: timezone });
 
-  const earliestStart = new Date(
-    now.getTime() +
-      HVAC_SCHEDULING_CONFIG.minimumLeadTimeMinutes * 60_000,
-  );
-
-  const today = getLocalDate(now, timeZone);
+  const today = getLocalDate(now, timezone);
   const slots: ArrivalSlot[] = [];
 
   for (let offset = 0; offset <= daysAhead; offset++) {
     const date = addDays(today, offset);
 
-    // Use the same scheduling rules covered by our unit tests.
-    const eligibleWindows = getEligibleWindows({
+    const eligibleWindows = getEligibleAvailabilityWindows({
+      zipCode,
       date,
-      bookingMode: zone.bookingMode,
-      timezone: timeZone,
-      earliestStart,
+      timezone,
+      now,
     });
 
     for (const { startTime, endTime } of eligibleWindows) {
-      // Check current database capacity for this arrival window.
       const capacity = await getSlotCapacity({
         businessId,
         startTime,
@@ -152,7 +108,7 @@ export async function getAvailableSlots({
 
   return {
     bookingMode: zone.bookingMode,
-    timezone: timeZone,
+    timezone,
     slots,
   };
 }
