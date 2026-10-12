@@ -1,13 +1,10 @@
-
 import { and, eq, gt, inArray, lt } from "drizzle-orm";
 
 import { db } from "@/db";
 import { appointments } from "@/db/schema/appointment";
 import { businesses } from "@/db/schema/business";
-import {
-  getServiceZone,
-  HVAC_SCHEDULING_CONFIG,
-} from "./config";
+import { getServiceZone, HVAC_SCHEDULING_CONFIG } from "./config";
+import { getEligibleWindows } from "./slot-rules";
 
 type AvailabilityOptions = {
   businessId: string;
@@ -22,10 +19,8 @@ type ArrivalSlot = {
   availableBookings: number;
 };
 
-const TIME_ZONE = HVAC_SCHEDULING_CONFIG.timezone;
-
 function getDateParts(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -44,9 +39,6 @@ function getDateParts(date: Date, timeZone: string) {
     year: Number(values.year),
     month: Number(values.month),
     day: Number(values.day),
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-    second: Number(values.second),
   };
 }
 
@@ -70,57 +62,6 @@ function addDays(date: string, days: number): string {
     String(result.getUTCMonth() + 1).padStart(2, "0"),
     String(result.getUTCDate()).padStart(2, "0"),
   ].join("-");
-}
-
-/**
- * Converts a business-local date and time into a UTC instant.
- * Iterative conversion handles ordinary timezone offsets and DST.
- */
-function localDateTimeToUtc(
-  date: string,
-  time: string,
-  timeZone: string,
-): Date {
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
-
-  const target = Date.UTC(
-    year,
-    month - 1,
-    day,
-    hour,
-    minute,
-    0,
-  );
-
-  let guess = target;
-
-  for (let i = 0; i < 4; i++) {
-    const parts = getDateParts(new Date(guess), timeZone);
-
-    const representedAsUtc = Date.UTC(
-      parts.year,
-      parts.month - 1,
-      parts.day,
-      parts.hour,
-      parts.minute,
-      parts.second,
-    );
-
-    guess += target - representedAsUtc;
-  }
-
-  return new Date(guess);
-}
-
-function getOperatingHours(date: string) {
-  const weekday = new Date(
-    `${date}T12:00:00.000Z`,
-  ).getUTCDay();
-
-  return HVAC_SCHEDULING_CONFIG.operatingHours[
-    weekday as keyof typeof HVAC_SCHEDULING_CONFIG.operatingHours
-  ];
 }
 
 export async function getAvailableSlots({
@@ -167,7 +108,7 @@ export async function getAvailableSlots({
 
   const timeZone = business.timezone;
 
-  // Validate the configured timezone before calculating slots.
+  // Validate the business's configured timezone.
   new Intl.DateTimeFormat("en-US", { timeZone });
 
   const earliestStart = new Date(
@@ -180,48 +121,17 @@ export async function getAvailableSlots({
 
   for (let offset = 0; offset <= daysAhead; offset++) {
     const date = addDays(today, offset);
-    const hours = getOperatingHours(date);
 
-    if (!hours) continue;
+    // Reuse the same tested scheduling rules used by our unit tests.
+    const eligibleWindows = getEligibleWindows({
+      date,
+      bookingMode: zone.bookingMode,
+      timezone: timeZone,
+      earliestStart,
+    });
 
-    for (const window of HVAC_SCHEDULING_CONFIG.arrivalWindows) {
-      if (
-        zone.bookingMode === "RESTRICTED" &&
-        !HVAC_SCHEDULING_CONFIG.secondaryZoneAllowedStartTimes
-          .includes(
-            window.start as (typeof HVAC_SCHEDULING_CONFIG.secondaryZoneAllowedStartTimes)[number],
-          )
-      ) {
-        continue;
-      }
-
-      // Do not offer windows outside the day's operating hours.
-      if (
-        window.start < hours.open ||
-        window.end > hours.close
-      ) {
-        continue;
-      }
-
-      const startTime = localDateTimeToUtc(
-        date,
-        window.start,
-        timeZone,
-      );
-
-      const endTime = localDateTimeToUtc(
-        date,
-        window.end,
-        timeZone,
-      );
-
-      if (
-        startTime.getTime() < earliestStart.getTime() ||
-        endTime.getTime() <= startTime.getTime()
-      ) {
-        continue;
-      }
-
+    for (const { startTime, endTime } of eligibleWindows) {
+      // Count existing appointments that overlap this arrival window.
       const overlappingAppointments = await db
         .select({
           id: appointments.id,
@@ -243,7 +153,10 @@ export async function getAvailableSlots({
       const capacity =
         HVAC_SCHEDULING_CONFIG.maxBookingsPerSlot;
 
-      if (occupied >= capacity) continue;
+      // Hide fully booked windows.
+      if (occupied >= capacity) {
+        continue;
+      }
 
       slots.push({
         startTime: startTime.toISOString(),
